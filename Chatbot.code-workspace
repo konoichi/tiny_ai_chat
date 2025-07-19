@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../../Services/tts/piper"
+    }
+  ],
+  "settings": {
+    "liveServer.settings.multiRootWorkspaceName": "piper"
+  }
+}

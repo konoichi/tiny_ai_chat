@@ -1,0 +1,16 @@
+model:
+  chat_format: chatml
+  context: 4096
+  gpu_layers: 32
+  path: models/dolphin-2.2.1-mistral-7b.Q5_0.gguf
+  repeat_penalty: 1.1
+  temperature: 0.7
+  threads: 8
+  top_k: 40
+  top_p: 0.9
+
+tts:
+  enabled: false
+  server_url: "http://localhost:5000"
+  default_model: "de_DE-thorsten-high"
+  pre_play_delay_ms: 250 # Umbenannt von silence_duration_ms

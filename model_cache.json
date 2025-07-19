@@ -1,0 +1,29 @@
+{
+  "models/dolphin-2.2.1-mistral-7b.Q4_0.gguf": {
+    "context_length": "",
+    "quantization": null,
+    "architecture": "",
+    "_file_meta": {
+      "size": 4108927744,
+      "mtime": 1752526581.0
+    }
+  },
+  "models/dolphin-2.2.1-mistral-7b.Q5_0.gguf": {
+    "context_length": "",
+    "quantization": null,
+    "architecture": "",
+    "_file_meta": {
+      "size": 4997728000,
+      "mtime": 1752570685.0
+    }
+  },
+  "models/tinyllama-1.1b-chat-v1.0.Q8_0.gguf": {
+    "context_length": "",
+    "quantization": null,
+    "architecture": "",
+    "_file_meta": {
+      "size": 1170781568,
+      "mtime": 1752665475.7717695
+    }
+  }
+}
