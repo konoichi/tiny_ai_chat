@@ -228,9 +228,7 @@ class YAMLPersonaManager(PersonaManager):
         yaml_path = os.path.join(self.yaml_path, f"{name}.yaml")
         
         if not os.path.exists(yaml_path):
-            logger.info(f"Keine YAML-Persona-Datei gefunden: {yaml_path}")
-            # Versuche stattdessen, die Textdatei zu laden
-            super().load_persona(name)
+            logger.info(f"Keine YAML-Persona-Datei für '{name}' gefunden. Fallback wird von der aufrufenden Methode erwartet.")
             self.current_yaml_persona = None
             return None
             

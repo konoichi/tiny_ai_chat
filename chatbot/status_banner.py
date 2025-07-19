@@ -1,115 +1,130 @@
+# /chatbot/status_banner.py
 """
-/chatbot/status_banner.py
-Version: 1.0.0
+Version: 3.0.0
 ------------------------------
-Status-Banner für den NavyYard Chatbot
+ID: NAVYYARD-REFACTOR-V3-STATUSBANNER-01
+Beschreibung: Verantwortlich für die Anzeige von Bannern, Statusinformationen und Hilfetexten.
 
-Dieses Modul stellt eine Komponente bereit, die ein formatiertes Status-Banner
-anzeigt, das Informationen über das aktive Modell, den Hardware-Modus und die
-aktive Persona enthält. Das Banner wird beim Start und nach Modellwechseln angezeigt.
+Nach dem Refactoring enthält diese Klasse alle Methoden zur Anzeige von Informationen,
+die zuvor teilweise als globale Funktionen in bot.py existierten. Sie ist jetzt
+der alleinige Spezialist für alle konsolenbasierten UI-Elemente.
 
 Autor: Stephan Wilkens / Abby-System
 Stand: Juli 2025
 """
-
-import logging
-from colorama import Fore, Style, Back
-from typing import Dict, Any, Optional
-
-# Logger für dieses Modul
-logger = logging.getLogger("StatusBanner")
+from colorama import Fore, Style
+import os
+from . import bot_model_commands as bmc
 
 class StatusBanner:
-    """
-    Komponente zur Anzeige eines formatierten Status-Banners.
-    
-    Diese Klasse generiert und zeigt ein formatiertes Banner an, das Informationen
-    über das aktive Modell, den Hardware-Modus und die aktive Persona enthält.
-    Das Banner wird beim Start und nach Modellwechseln angezeigt.
-    
-    Attributes:
-        bot: Referenz auf die Bot-Instanz
-        banner_width (int): Breite des Banners in Zeichen
-        separator_char (str): Zeichen für die Trennlinie
-    """
-    
-    def __init__(self, bot, banner_width: int = 50, separator_char: str = "="):
+    def __init__(self, bot):
         """
-        Initialisiert das StatusBanner.
+        Initialisiert den StatusBanner.
         
         Args:
-            bot: Referenz auf die Bot-Instanz
-            banner_width (int): Breite des Banners in Zeichen
-            separator_char (str): Zeichen für die Trennlinie
+            bot (AbbyBot): Eine Referenz auf die Haupt-Bot-Instanz, um auf
+                           Daten wie Modell, Persona etc. zugreifen zu können.
         """
         self.bot = bot
-        self.banner_width = banner_width
-        self.separator_char = separator_char
-        
-    def generate_banner(self) -> str:
-        """
-        Generiert das Status-Banner basierend auf dem aktuellen Zustand.
-        
-        Returns:
-            str: Das generierte Banner als formatierter String
-        """
-        # Hole Modell-Informationen
-        from . import bot_model_commands as bmc
-        model_name = "Nicht geladen"
-        if bmc.active_model:
-            model_name = bmc.active_model.name
-            
-        # Hole Hardware-Informationen
-        hardware_mode = "UNKNOWN"
-        gpu_layers = 0
-        if hasattr(self.bot.model, "get_hardware_info"):
-            hardware_info = self.bot.model.get_hardware_info()
-            hardware_mode = hardware_info.get("mode", "UNKNOWN")
-            gpu_layers = hardware_info.get("gpu_layers", 0)
-            
-        # Hole Persona-Informationen
-        persona_name = self.bot.persona_manager.get_current_name()
-        
-        # Erstelle Banner
-        separator = self.separator_char * self.banner_width
-        title = "Abby Chatbot - Einsatzbereit"
-        
-        # Zentriere den Titel
-        padding = (self.banner_width - len(title)) // 2
-        title_line = self.separator_char * padding + title + self.separator_char * (self.banner_width - padding - len(title))
-        
-        # Erstelle Banner-Zeilen
-        lines = [
-            separator,
-            title_line,
-            separator,
-            f"- Aktives Modell : {model_name}"
-        ]
-        
-        # Hardware-Modus-Zeile
-        if hardware_mode == "GPU":
-            lines.append(f"- Betriebsmodus : GPU ({gpu_layers} Layer)")
-        else:
-            lines.append(f"- Betriebsmodus : {hardware_mode}")
-            
-        # Persona-Zeile
-        lines.append(f"- Aktive Persona : {persona_name}")
-        
-        # Abschließende Trennlinie
-        lines.append(separator)
-        
-        # Kombiniere zu einem String
-        return "\n".join(lines)
-        
+
     def display(self):
-        """
-        Zeigt das Status-Banner an.
-        """
-        banner = self.generate_banner()
-        print(Fore.YELLOW + banner)
-        
+        """Zeigt den Haupt-Startbanner an."""
+        print(Fore.CYAN + "="*50)
+        print(Fore.CYAN + "===========Abby Chatbot - Einsatzbereit===========")
+        print(Fore.CYAN + "="*50)
+        if bmc.active_model:
+            print(f"- Aktives Modell : {bmc.active_model.name}")
+            if hasattr(self.bot.model, "get_hardware_info"):
+                info = self.bot.model.get_hardware_info()
+                print(f"- Betriebsmodus : {info.get('mode', 'N/A')} ({info.get('gpu_layers', 0)} Layer)")
+        print(f"- Aktive Persona : {self.bot.persona_manager.get_current_name()}")
+        print(Fore.CYAN + "="*50)
+
     def update(self):
-        """
-        Aktualisiert und zeigt das Banner erneut an.
-        """
+        """Aktualisiert den Banner (oder zeigt ihn erneut an)."""
         self.display()
+
+    def print_status(self, bot_instance=None):
+        """
+        Zeigt den detaillierten Bot-Status an.
+        Nimmt optional eine bot_instance an, verwendet aber self.bot.
+        """
+        bot = self.bot # Nutze die gespeicherte bot-Referenz
+        print(Fore.YELLOW + "\n📊 Aktueller Bot-Status:")
+        
+        if bmc.active_model:
+            print(f"- Aktives Modell: {bmc.active_model.name}")
+            if hasattr(bot.model, "get_hardware_info"):
+                hardware_info = bot.model.get_hardware_info()
+                mode = hardware_info.get("mode", "UNKNOWN")
+                gpu_layers = hardware_info.get("gpu_layers", 0)
+                print(f"- Betriebsmodus: {mode}" + (f" ({gpu_layers} Layer)" if mode == "GPU" else ""))
+        
+        persona_name = bot.persona_manager.get_current_name()
+        print(f"- Aktive Persona: {persona_name}")
+        
+        if hasattr(bot.persona_manager, "get_yaml_persona"):
+            yaml_persona = bot.persona_manager.get_yaml_persona()
+            if yaml_persona:
+                print(f"  ├ Typ: YAML-Persona")
+                if yaml_persona.description:
+                    print(f"  ├ Beschreibung: {yaml_persona.description}")
+            else:
+                print(f"  └ Typ: Text-Persona")
+        
+        print(f"- Streaming: {'aktiviert' if bot.streaming else 'deaktiviert'}")
+        print(f"- Debug-Modus: {'aktiviert' if bot.debug_mode else 'deaktiviert'}")
+        print(f"- Verlaufslänge: {len(bot.memory.get_recent())} Einträge")
+
+        if bot.tts_manager:
+            tts_status = 'aktiviert' if bot.tts_manager.enabled else 'deaktiviert'
+            print(f"- TTS: {tts_status}")
+
+    def print_hardware_info(self, bot_instance=None):
+        """Zeigt detaillierte Hardware-Informationen an."""
+        bot = self.bot
+        print(Fore.YELLOW + "\n💻 Hardware-Informationen:")
+        
+        if not hasattr(bot, "model") or not hasattr(bot.model, "get_hardware_info"):
+            print("❌ Hardware-Informationen nicht verfügbar.")
+            return
+        
+        hardware_info = bot.model.get_hardware_info()
+        print(f"- CUDA verfügbar: {'✅' if hardware_info.get('cuda_available') else '❌'}")
+        
+        print("\nUmgebungsvariablen für GPU-Beschleunigung:")
+        print(f"- LLAMA_CUBLAS: {os.environ.get('LLAMA_CUBLAS', 'nicht gesetzt')}")
+
+    def print_help(self):
+        """Zeigt das Hilfe-Menü an."""
+        print(Fore.YELLOW + """
+🆘 Verfügbare Befehle:
+
+  Modell & Persona
+  ────────────────
+  📦 !models [--verbose]     - Verfügbare Modelle auflisten
+  🔁 !model <n>              - Modell mit Index laden
+  📁 !model last_model       - Letztes Modell erneut laden
+  ℹ️  !model                 - Infos zum aktiven Modell (inkl. RAM)
+  👤 !persona <name>         - Aktive Persona wechseln
+
+  Interaktion & Ausgabe
+  ─────────────────────
+  🔊 !say <text>             - Text mit TTS sprechen lassen
+  🔊 !tts on/off             - TTS zur Laufzeit an-/ausschalten
+  🔁 !stream on/off          - Streaming-Modus aktivieren/deaktivieren
+
+  System & Debugging
+  ──────────────────
+  📊 !status                 - Status anzeigen
+  💻 !hardware               - Detaillierte Hardware-Informationen anzeigen
+  🐞 !debug on/off           - Debug-Modus aktivieren/deaktivieren
+  🧹 !reset                  - Chatverlauf löschen
+  💀 !selftest               - Systemcheck durchführen
+  ⏱️ !benchmark              - Führt einen einfachen Benchmark durch
+
+  Allgemein
+  ─────────
+  ❓ !help                   - Diese Hilfe anzeigen
+  🚪 !exit / !quit           - Abby verlassen
+""")
