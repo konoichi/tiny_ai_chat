@@ -207,7 +207,9 @@ marimo/_lsp/
 __marimo__/
 
 *.gguf
-sage.*
-sue.*
-queen.*
-Sage.*
+sage.yaml
+Sage.txt
+sue.txt
+sue.yaml
+queen.txt
+queen.yaml
