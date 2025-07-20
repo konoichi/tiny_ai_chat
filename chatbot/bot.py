@@ -1,11 +1,11 @@
 # /chatbot/bot.py
 """
-Version: 3.0.1
+Version: 3.0.2
 ------------------------------
-ID: NAVYYARD-REFACTOR-V3-BOT-FIXED-01
+ID: NAVYYARD-REFACTOR-V3-BOT-SAY-FIX-01
 Beschreibung: Hauptklasse AbbyBot, die als zentraler Controller fungiert.
-FIX: Korrigiert einen ImportError, indem der korrekte Funktionsname
-'perform_selftest' aus dem selftest-Modul importiert wird.
+FIX: Behebt einen 'IndexError' in 'handle_say_command', der auftrat,
+wenn der Befehl ohne Argumente aufgerufen wurde.
 
 Autor: Stephan Wilkens / Abby-System
 Stand: Juli 2025
@@ -22,7 +22,6 @@ from .memory import Memory
 from .yaml_persona_manager import YAMLPersonaManager
 from .prompter import PromptBuilder
 from .model_wrapper import ModelWrapper
-# KORRIGIERTER IMPORT HIER:
 from .selftest import perform_selftest
 from .config import SETTINGS
 from .status_banner import StatusBanner
@@ -81,7 +80,7 @@ class AbbyBot:
 
     def handle_model_command(self, user_input):
         parts = user_input.strip().split()
-        if len(parts) == 2:
+        if len(parts) >= 2:
             if parts[1] == "last_model":
                 print(bmc.handle_model_last())
                 return
@@ -98,22 +97,31 @@ class AbbyBot:
         print(bmc.handle_models_command(verbose))
 
     def handle_persona_command(self, user_input):
-        name = user_input.split("!persona ", 1)[1].strip()
-        if not name:
+        parts = user_input.split("!persona ", 1)
+        if len(parts) < 2 or not parts[1].strip():
             print(Fore.YELLOW + "⚠️ Bitte gib einen Persona-Namen an.")
             return
+            
+        name = parts[1].strip()
         self.persona_manager.load_persona(name)
         self.prompter = PromptBuilder(self.persona_manager.get_persona())
         self.status_banner.update()
         print(Fore.YELLOW + f"🔄 Persona gewechselt zu: {name}")
 
     def handle_say_command(self, user_input):
-        text_to_say = user_input.split("!say ", 1)[1].strip()
-        if not text_to_say:
+        """
+        Handler für den !say-Befehl. Jetzt robust gegen leere Eingaben.
+        """
+        parts = user_input.split("!say ", 1)
+        # Wir prüfen, ob nach dem Split überhaupt ein zweiter Teil existiert
+        # und ob dieser nicht nur aus Leerzeichen besteht.
+        if len(parts) > 1 and parts[1].strip():
+            text_to_say = parts[1].strip()
+            if self.tts_manager:
+                self.tts_manager.speak(text_to_say)
+        else:
+            # Wenn kein Text angegeben wurde, geben wir eine klare Anweisung.
             print(Fore.YELLOW + "Was soll ich sagen? `!say TEXT`")
-            return
-        if self.tts_manager:
-            self.tts_manager.speak(text_to_say)
 
     def handle_tts_command(self, user_input):
         if not self.tts_manager or not self.tts_manager.is_configured:
@@ -143,7 +151,6 @@ class AbbyBot:
             print(Fore.YELLOW + "🚫 Debug-Modus deaktiviert")
 
     def handle_selftest_command(self, user_input):
-        # KORRIGIERTER AUFRUF HIER:
         perform_selftest(self)
 
     def handle_benchmark_command(self, user_input):

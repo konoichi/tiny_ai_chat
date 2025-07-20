@@ -10,7 +10,6 @@ model:
   top_p: 0.9
 
 tts:
-  enabled: false
-  server_url: "http://localhost:5000"
-  default_model: "de_DE-thorsten-high"
-  pre_play_delay_ms: 250 # Umbenannt von silence_duration_ms
+  enabled: true
+  server_url: "http://localhost:5000/tts"
+  default_model: "en_US-hfc_female-medium"

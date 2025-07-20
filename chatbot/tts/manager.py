@@ -1,74 +1,109 @@
-# chatbot/tts/manager.py
-# ID: TTS-MANAGER-SIMPLE-03-FIXED
+# /chatbot/tts/manager.py
+"""
+Version: 4.0.2
+------------------------------
+ID: NAVYYARD-REFACTOR-V4-TTS-PYGAME-JSON-FIX-01
+Beschreibung: Manager für die Text-to-Speech-Funktionalität.
+FIX: Die 'synthesize'-Methode wurde geändert, um den JSON-Payload
+und die Header manuell zu erstellen, anstatt sich auf die Automatik
+der 'requests'-Bibliothek zu verlassen. Dies ist ein gezielter Versuch,
+ein vermutetes Problem bei der Datenübertragung an den Server zu beheben,
+das das "Geisterwort"-Problem verursacht.
 
-import requests
+Autor: Stephan Wilkens / Abby-System
+Stand: Juli 2025
+"""
 import logging
-from typing import Optional
+import requests
+import io
+import json # Importiere das json-Modul
 
-logger = logging.getLogger("TTSManager")
+# Pygame wird jetzt für die Audio-Wiedergabe verwendet.
+import pygame
 
 class TTSManager:
-    """
-    Simpler Manager für die Verbindung zum externen Piper TTS-Server.
-    Kann zur Laufzeit an- und ausgeschaltet werden.
-    """
-    def __init__(self, config: dict):
+    def __init__(self, config):
         """
-        Initialisiert den TTS-Manager mit der Konfiguration aus settings.yaml.
+        Initialisiert den TTS-Manager und die Pygame-Audio-Engine.
         """
-        self.server_url = config.get('server_url', '').rstrip('/')
-        self.default_model = config.get('default_model', 'de_DE-thorsten-high')
-        self._session = requests.Session()
-
-        # Prüft, ob der Server überhaupt konfiguriert ist.
+        self.logger = logging.getLogger("TTSManager")
+        self.server_url = config.get("server_url")
+        self.enabled = config.get("enabled", False) and bool(self.server_url)
         self.is_configured = bool(self.server_url)
-        
-        # Setzt den Startzustand basierend auf der Konfiguration.
-        self.enabled = config.get('enabled', False) and self.is_configured
 
-        if config.get('enabled', False) and not self.is_configured:
-            logger.error("TTS ist in der settings.yaml aktiviert, aber es wurde keine server_url angegeben. TTS bleibt deaktiviert.")
-            self.enabled = False
-    
+        if self.is_configured:
+            try:
+                pygame.mixer.init(frequency=44100, buffer=2048)
+                self.logger.info("Pygame-Mixer erfolgreich initialisiert.")
+            except Exception as e:
+                self.logger.error(f"Fehler bei der Initialisierung von Pygame-Mixer: {e}")
+                self.is_configured = False
+
     def enable(self):
-        """Aktiviert TTS zur Laufzeit, wenn eine Server-URL konfiguriert ist."""
+        """Aktiviert TTS zur Laufzeit."""
         if self.is_configured:
             self.enabled = True
-            logger.info("TTS zur Laufzeit aktiviert.")
+            self.logger.info("TTS zur Laufzeit aktiviert.")
         else:
-            logger.warning("TTS kann nicht aktiviert werden, da keine server_url in der settings.yaml konfiguriert ist.")
+            self.logger.warning("TTS kann nicht aktiviert werden (nicht konfiguriert oder Mixer-Fehler).")
 
     def disable(self):
         """Deaktiviert TTS zur Laufzeit."""
         self.enabled = False
-        logger.info("TTS zur Laufzeit deaktiviert.")
+        self.logger.info("TTS zur Laufzeit deaktiviert.")
 
-    def is_available(self) -> bool:
-        """Prüft, ob der TTS-Server erreichbar ist."""
-        if not self.enabled or not self.is_configured:
-            return False
-        try:
-            res = self._session.get(f"{self.server_url}/health", timeout=2)
-            return res.status_code == 200
-        except requests.exceptions.RequestException:
-            return False
+    def is_enabled(self):
+        """Prüft, ob TTS aktuell aktiviert ist."""
+        return self.enabled
 
-    def synthesize(self, text: str, model: Optional[str] = None, speaker_id: str = "0") -> Optional[bytes]:
-        """Fordert die Audio-Synthese vom Server an."""
-        if not self.enabled or not self.is_configured:
-            logger.warning("Versuch, TTS zu verwenden, obwohl es deaktiviert/nicht konfiguriert ist.")
+    def synthesize(self, text: str) -> bytes:
+        """
+        Sendet Text an den TTS-Server und empfängt die WAV-Audiodaten.
+        Jetzt mit expliziter JSON-Erstellung.
+        """
+        if not self.is_configured:
             return None
-
-        payload = {
-            "text": text,
-            "model": model or self.default_model,
-            "speaker_id": speaker_id
-        }
-        
         try:
-            res = self._session.post(f"{self.server_url}/tts", json=payload, timeout=15)
-            res.raise_for_status()
-            return res.content
+            # *** DIE ÄNDERUNG ***
+            # Wir erstellen den Payload als Dictionary...
+            payload = {"text": text}
+            # ...und die Header, um sicherzustellen, dass der Server weiß, dass es JSON ist.
+            headers = {'Content-Type': 'application/json'}
+            
+            # Wir übergeben die Daten jetzt als manuell erstellten JSON-String.
+            response = requests.post(self.server_url, data=json.dumps(payload), headers=headers)
+            
+            response.raise_for_status()
+            return response.content
         except requests.exceptions.RequestException as e:
-            logger.error(f"TTS-Synthese fehlgeschlagen: {e}")
+            self.logger.error(f"Fehler bei der Verbindung zum TTS-Server: {e}")
             return None
+
+    def speak(self, text: str):
+        """
+        Synthetisiert Text und spielt ihn direkt über den Pygame-Mixer ab.
+        """
+        self.logger.info(f"TTS 'speak' aufgerufen mit Text: '{text}'")
+
+        if not self.enabled or not text:
+            return
+            
+        if not pygame.mixer.get_init():
+            self.logger.error("Pygame-Mixer ist nicht initialisiert. Kann Audio nicht abspielen.")
+            return
+
+        if pygame.mixer.get_busy():
+            self.logger.warning("TTS-Anfrage ignoriert, da bereits Audio abgespielt wird.")
+            return
+
+        audio_data = self.synthesize(text)
+        if not audio_data:
+            self.logger.error("Audio-Synthese fehlgeschlagen, keine Daten zum Abspielen.")
+            return
+
+        try:
+            sound = pygame.mixer.Sound(io.BytesIO(audio_data))
+            sound.play()
+        except Exception as e:
+            self.logger.error(f"Ein Fehler ist bei der Pygame-Wiedergabe aufgetreten: {e}")
+

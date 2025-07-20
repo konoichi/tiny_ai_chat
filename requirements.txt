@@ -13,3 +13,5 @@ pytest>=7.4.0
 openai>=0.27.0
 simpleaudio>=1.0.4
 requests>=2.31.0
+
+pyaudio

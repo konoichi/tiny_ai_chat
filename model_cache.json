@@ -25,5 +25,14 @@
       "size": 1170781568,
       "mtime": 1752665475.7717695
     }
+  },
+  "models/dolphin-2.9-llama3-8b-q5_K_M.gguf": {
+    "context_length": "",
+    "quantization": null,
+    "architecture": "",
+    "_file_meta": {
+      "size": 5733512576,
+      "mtime": 1752929922.0
+    }
   }
 }
