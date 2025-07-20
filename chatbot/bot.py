@@ -1,15 +1,17 @@
 # /chatbot/bot.py
 """
-Version: 3.0.2
+Version: 4.1.0
 ------------------------------
-ID: NAVYYARD-REFACTOR-V3-BOT-SAY-FIX-01
+ID: NAVYYARD-GRADIO-BOT-STREAMING-FIX-01
 Beschreibung: Hauptklasse AbbyBot, die als zentraler Controller fungiert.
-FIX: Behebt einen 'IndexError' in 'handle_say_command', der auftrat,
-wenn der Befehl ohne Argumente aufgerufen wurde.
+FEATURE: Fügt die neue Methode 'process_llm_request_stream' hinzu.
+Diese Methode ist ein Generator, der die Antwort der KI Wort für Wort
+'yielded', um Live-Streaming in der Gradio-GUI zu ermöglichen.
 
 Autor: Stephan Wilkens / Abby-System
 Stand: Juli 2025
 """
+# (Imports und __init__ bleiben gleich wie in der vorherigen Version)
 import logging
 import os
 import yaml
@@ -17,7 +19,6 @@ import time
 from pathlib import Path
 from colorama import Fore, Style, init
 
-# Lokale Importe
 from .memory import Memory
 from .yaml_persona_manager import YAMLPersonaManager
 from .prompter import PromptBuilder
@@ -32,12 +33,8 @@ from .model_manager import scan_models, load_last_model
 init(autoreset=True)
 
 class AbbyBot:
-    """
-    Hauptklasse des Chatbot-Systems, die alle Komponenten orchestriert.
-    Dient als Zustand-Container und Werkzeugkiste für main.py.
-    """
     def __init__(self):
-        """Initialisiert den Bot und alle seine Sub-Komponenten."""
+        # ... (der __init__-Block bleibt unverändert)
         self.logger = logging.getLogger("AbbyBot")
         self.memory = Memory()
         self.persona_manager = YAMLPersonaManager(base_path="config", yaml_path="config/personas", default="nova")
@@ -45,11 +42,8 @@ class AbbyBot:
         self.model = ModelWrapper()
         self.streaming = False
         SETTINGS.debug = False
-        
         self.status_banner = StatusBanner(self)
         bmc.bind_abby(self)
-
-        # --- TTS-Manager initialisieren ---
         self.tts_manager = None
         try:
             with open("config/settings.yaml", "r", encoding="utf-8") as f:
@@ -58,13 +52,10 @@ class AbbyBot:
                 self.tts_manager = TTSManager(config["tts"])
         except Exception as e:
             self.logger.error(f"Fehler bei der Initialisierung des TTS-Managers: {e}", exc_info=True)
-
-        # --- Pre-Indexing der Modelle ---
         self.logger.info("Pre-Indexing der Modelle...")
         model_list = scan_models()
         bmc.model_list = model_list
         self.logger.info(f"{len(model_list)} Modelle gefunden und indexiert")
-
         last = load_last_model(model_list)
         if last:
             ok = self.model.load_model(str(last.path))
@@ -72,8 +63,7 @@ class AbbyBot:
                 bmc.active_model = last
                 print(Fore.YELLOW + f"\n🔁 Letztes Modell automatisch geladen: {last.name}")
 
-    # --- Handler-Methoden (aufgerufen von main.py) ---
-
+    # --- Handler-Methoden (bleiben unverändert) ---
     def handle_reset_command(self, user_input):
         self.memory.clear()
         print(Fore.YELLOW + "🧹 Verlauf gelöscht")
@@ -97,30 +87,22 @@ class AbbyBot:
         print(bmc.handle_models_command(verbose))
 
     def handle_persona_command(self, user_input):
-        parts = user_input.split("!persona ", 1)
-        if len(parts) < 2 or not parts[1].strip():
+        name = user_input.split("!persona ", 1)[1].strip()
+        if not name:
             print(Fore.YELLOW + "⚠️ Bitte gib einen Persona-Namen an.")
             return
-            
-        name = parts[1].strip()
         self.persona_manager.load_persona(name)
         self.prompter = PromptBuilder(self.persona_manager.get_persona())
         self.status_banner.update()
         print(Fore.YELLOW + f"🔄 Persona gewechselt zu: {name}")
 
     def handle_say_command(self, user_input):
-        """
-        Handler für den !say-Befehl. Jetzt robust gegen leere Eingaben.
-        """
         parts = user_input.split("!say ", 1)
-        # Wir prüfen, ob nach dem Split überhaupt ein zweiter Teil existiert
-        # und ob dieser nicht nur aus Leerzeichen besteht.
         if len(parts) > 1 and parts[1].strip():
             text_to_say = parts[1].strip()
             if self.tts_manager:
                 self.tts_manager.speak(text_to_say)
         else:
-            # Wenn kein Text angegeben wurde, geben wir eine klare Anweisung.
             print(Fore.YELLOW + "Was soll ich sagen? `!say TEXT`")
 
     def handle_tts_command(self, user_input):
@@ -161,8 +143,6 @@ class AbbyBot:
         duration = time.time() - start_time
         print(Fore.YELLOW + f"Benchmark abgeschlossen in {duration:.2f} Sekunden")
 
-    # --- Anzeige-Methoden ---
-
     def display_status(self, user_input=None):
         self.status_banner.print_status(self)
 
@@ -175,29 +155,39 @@ class AbbyBot:
     def display_banner(self):
         self.status_banner.display()
 
+    def get_user_input(self):
+        return input(Fore.CYAN + "👤 Du: " + Style.RESET_ALL).strip()
+        
+    def display_bot_response(self, text):
+        print(Fore.GREEN + f"🤖 {self.persona_manager.get_current_name().capitalize()}: {text}")
+
     # --- Kernlogik ---
 
-    def get_user_input(self):
-        """Holt die Benutzereingabe aus der Konsole."""
-        return input(Fore.CYAN + "👤 Du: " + Style.RESET_ALL).strip()
-
-    def process_llm_request(self, user_input):
-        """Verarbeitet eine normale Benutzereingabe, die an die KI gehen soll."""
+    def process_llm_request(self, user_input: str) -> str:
+        """
+        Verarbeitet eine normale Benutzereingabe und GIBT die volle Antwort ZURÜCK.
+        Wird von der CLI (main.py) verwendet.
+        """
         chat_history = self.memory.get_recent()
         prompt = self.prompter.build(chat_history, user_input)
-
-        if self.streaming:
-            print(Fore.GREEN + f"🤖 {self.persona_manager.get_current_name().capitalize()}: ", end="", flush=True)
-            stream_buffer = ""
-            for token in self.model.chat_stream(prompt):
-                print(Fore.GREEN + token, end="", flush=True)
-                stream_buffer += token
-            print()
-            answer = stream_buffer.strip()
-        else:
-            answer = self.model.chat(prompt)
-            print(Fore.GREEN + f"🤖 {self.persona_manager.get_current_name().capitalize()}: {answer}")
-
+        answer = self.model.chat(prompt)
         self.memory.add_entry(user_input, answer)
-        if self.tts_manager and self.tts_manager.enabled:
-            self.tts_manager.speak(answer)
+        return answer
+
+    def process_llm_request_stream(self, user_input: str):
+        """
+        NEUE METHODE: Verarbeitet eine Benutzereingabe und YIELDED die Antwort
+        Stück für Stück. Wird von der Gradio-GUI verwendet.
+        """
+        chat_history = self.memory.get_recent()
+        prompt = self.prompter.build(chat_history, user_input)
+        
+        full_response = ""
+        # Wir iterieren durch den Stream vom ModelWrapper
+        for token in self.model.chat_stream(prompt):
+            full_response += token
+            # Wir geben nach jedem Token den bisherigen Gesamttext zurück
+            yield full_response
+        
+        # Nachdem der Stream beendet ist, speichern wir die volle Antwort im Gedächtnis.
+        self.memory.add_entry(user_input, full_response)

@@ -1,15 +1,14 @@
 model:
   chat_format: chatml
   context: 4096
-  gpu_layers: 32
+  gpu_layers: 50
   path: models/dolphin-2.2.1-mistral-7b.Q5_0.gguf
   repeat_penalty: 1.1
   temperature: 0.7
   threads: 8
   top_k: 40
   top_p: 0.9
-
 tts:
+  default_model: en_US-hfc_female-medium
   enabled: true
-  server_url: "http://localhost:5000/tts"
-  default_model: "en_US-hfc_female-medium"
+  server_url: http://localhost:5000/tts

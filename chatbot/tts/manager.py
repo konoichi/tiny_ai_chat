@@ -1,14 +1,14 @@
 # /chatbot/tts/manager.py
 """
-Version: 4.0.2
+Version: 5.0.0
 ------------------------------
-ID: NAVYYARD-REFACTOR-V4-TTS-PYGAME-JSON-FIX-01
+ID: NAVYYARD-REFACTOR-V5-TTS-TEXT-CHUNKING-01
 Beschreibung: Manager für die Text-to-Speech-Funktionalität.
-FIX: Die 'synthesize'-Methode wurde geändert, um den JSON-Payload
-und die Header manuell zu erstellen, anstatt sich auf die Automatik
-der 'requests'-Bibliothek zu verlassen. Dies ist ein gezielter Versuch,
-ein vermutetes Problem bei der Datenübertragung an den Server zu beheben,
-das das "Geisterwort"-Problem verursacht.
+FEATURE: Implementiert intelligentes Text-Chunking. Lange Texte, die
+das Limit des TTS-Servers überschreiten, werden jetzt automatisch an
+Satzgrenzen in kleinere Stücke zerlegt. Diese Stücke werden dann
+nacheinander abgespielt, was eine nahtlose Sprachausgabe für beliebig
+lange Antworten ermöglicht.
 
 Autor: Stephan Wilkens / Abby-System
 Stand: Juli 2025
@@ -16,7 +16,8 @@ Stand: Juli 2025
 import logging
 import requests
 import io
-import json # Importiere das json-Modul
+import json
+import time
 
 # Pygame wird jetzt für die Audio-Wiedergabe verwendet.
 import pygame
@@ -30,6 +31,8 @@ class TTSManager:
         self.server_url = config.get("server_url")
         self.enabled = config.get("enabled", False) and bool(self.server_url)
         self.is_configured = bool(self.server_url)
+        # Lese das Zeichenlimit für Chunks aus der Config, mit einem sicheren Standardwert.
+        self.max_chars = config.get("max_chars", 450)
 
         if self.is_configured:
             try:
@@ -56,23 +59,52 @@ class TTSManager:
         """Prüft, ob TTS aktuell aktiviert ist."""
         return self.enabled
 
+    def _split_text(self, text: str):
+        """
+        Teilt einen langen Text in sinnvolle Stücke, die das max_chars-Limit nicht überschreiten.
+        """
+        chunks = []
+        remaining_text = text.strip()
+        
+        while len(remaining_text) > self.max_chars:
+            # Finde die letzte mögliche Trennstelle (Satzende) innerhalb des Limits.
+            split_pos = -1
+            for punctuation in ['.', '!', '?', '\n', ';', ':']:
+                pos = remaining_text.rfind(punctuation, 0, self.max_chars)
+                if pos > split_pos:
+                    split_pos = pos
+            
+            # Wenn kein Satzende gefunden wurde, suche nach dem letzten Komma oder Leerzeichen.
+            if split_pos == -1:
+                for punctuation in [',', ' ']:
+                    pos = remaining_text.rfind(punctuation, 0, self.max_chars)
+                    if pos > split_pos:
+                        split_pos = pos
+
+            # Wenn immer noch keine Trennstelle gefunden wurde, mache einen harten Schnitt.
+            if split_pos == -1:
+                split_pos = self.max_chars - 1
+
+            # Füge den Chunk zur Liste hinzu und bereite den restlichen Text vor.
+            chunks.append(remaining_text[:split_pos + 1])
+            remaining_text = remaining_text[split_pos + 1:].lstrip()
+            
+        # Füge den letzten verbleibenden Teil des Textes hinzu.
+        if remaining_text:
+            chunks.append(remaining_text)
+            
+        return chunks
+
     def synthesize(self, text: str) -> bytes:
         """
         Sendet Text an den TTS-Server und empfängt die WAV-Audiodaten.
-        Jetzt mit expliziter JSON-Erstellung.
         """
         if not self.is_configured:
             return None
         try:
-            # *** DIE ÄNDERUNG ***
-            # Wir erstellen den Payload als Dictionary...
             payload = {"text": text}
-            # ...und die Header, um sicherzustellen, dass der Server weiß, dass es JSON ist.
             headers = {'Content-Type': 'application/json'}
-            
-            # Wir übergeben die Daten jetzt als manuell erstellten JSON-String.
             response = requests.post(self.server_url, data=json.dumps(payload), headers=headers)
-            
             response.raise_for_status()
             return response.content
         except requests.exceptions.RequestException as e:
@@ -81,29 +113,35 @@ class TTSManager:
 
     def speak(self, text: str):
         """
-        Synthetisiert Text und spielt ihn direkt über den Pygame-Mixer ab.
+        Nimmt einen potenziell langen Text, teilt ihn in Stücke und spielt diese nacheinander ab.
         """
-        self.logger.info(f"TTS 'speak' aufgerufen mit Text: '{text}'")
-
-        if not self.enabled or not text:
+        if not self.enabled or not text or not text.strip():
             return
             
         if not pygame.mixer.get_init():
             self.logger.error("Pygame-Mixer ist nicht initialisiert. Kann Audio nicht abspielen.")
             return
 
-        if pygame.mixer.get_busy():
-            self.logger.warning("TTS-Anfrage ignoriert, da bereits Audio abgespielt wird.")
-            return
+        # Zerlege den Text in abspielbare Stücke.
+        text_chunks = self._split_text(text)
+        self.logger.info(f"Text wurde in {len(text_chunks)} Audio-Stücke aufgeteilt.")
 
-        audio_data = self.synthesize(text)
-        if not audio_data:
-            self.logger.error("Audio-Synthese fehlgeschlagen, keine Daten zum Abspielen.")
-            return
+        for i, chunk in enumerate(text_chunks):
+            # Warte, bis der vorherige Sound fertig ist.
+            while pygame.mixer.get_busy():
+                time.sleep(0.1)
 
-        try:
-            sound = pygame.mixer.Sound(io.BytesIO(audio_data))
-            sound.play()
-        except Exception as e:
-            self.logger.error(f"Ein Fehler ist bei der Pygame-Wiedergabe aufgetreten: {e}")
+            self.logger.info(f"Spiele Stück {i+1}/{len(text_chunks)} ab: '{chunk[:80]}...'")
+            audio_data = self.synthesize(chunk)
+            
+            if not audio_data:
+                self.logger.error(f"Audio-Synthese für Stück {i+1} fehlgeschlagen.")
+                continue
 
+            try:
+                sound = pygame.mixer.Sound(io.BytesIO(audio_data))
+                sound.play()
+            except Exception as e:
+                self.logger.error(f"Ein Fehler ist bei der Pygame-Wiedergabe aufgetreten: {e}")
+                # Breche bei einem Wiedergabefehler ab, um eine Endlosschleife zu vermeiden.
+                break
